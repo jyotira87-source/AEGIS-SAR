@@ -1,0 +1,28 @@
+# Render Blueprint — AEGIS-SAR (SIH26143)
+# Backend: FastAPI intelligence service.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Secrets are marked `sync: false` so they are prompted in the Render
+# dashboard at deploy time and are never stored in this repository.
+
+services:
+  - type: web
+    name: aegis-sar-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # $PORT is injected by Render; uvicorn must bind to it.
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # Zero-trust token verified on every API request via X-ZeroTrust-Token.
+      # MUST match NEXT_PUBLIC_AEGIS_TOKEN configured on the Vercel frontend.
+      - key: AEGIS_ZERO_TRUST_TOKEN
+        sync: false
+      # CORS allow-list — must include the Vercel production domain,
+      # e.g. https://aegis-sar.vercel.app,https://aegis-sar-git-main-user.vercel.app
+      - key: AEGIS_ALLOWED_ORIGINS
+        sync: false

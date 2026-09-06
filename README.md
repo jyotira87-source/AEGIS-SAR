@@ -128,4 +128,61 @@ is offline the dashboard automatically falls back to a bundled sample intelligen
 
 ---
 
+## Deployment
+
+The project is configured for **backend on Render** + **frontend on Vercel**.
+
+### 1. Backend → Render (Blueprint deploy)
+
+The repository includes a [`render.yaml`](render.yaml) blueprint. To deploy:
+
+1. Push this repo to GitHub (done) and go to the
+   [Render Dashboard](https://dashboard.render.com) → **New → Blueprint** →
+   select `jyotira87-source/AEGIS-SAR`.
+2. Render reads `render.yaml` and creates the `aegis-sar-backend` web service
+   (root dir `backend`, build `pip install -r requirements.txt`,
+   start `uvicorn main:app --host 0.0.0.0 --port $PORT`, health check `/`).
+3. Fill in the prompted environment variables:
+
+   | Variable | Value |
+   | -------- | ----- |
+   | `AEGIS_ZERO_TRUST_TOKEN` | The token from `backend/.env` (must match the frontend) |
+   | `AEGIS_ALLOWED_ORIGINS` | `https://<your-vercel-app>.vercel.app` (comma-separate extra preview domains) |
+
+4. Deploy and copy the service URL, e.g. `https://aegis-sar-backend.onrender.com`.
+
+> **Note (free tier):** the service sleeps after ~15 minutes of inactivity; the
+> first request afterwards takes ~30–50 s to wake it up. The in-memory vault
+> registry is cleared whenever the instance restarts.
+
+### 2. Frontend → Vercel
+
+1. Go to the [Vercel Dashboard](https://vercel.com/new) → **Import** the
+   `jyotira87-source/AEGIS-SAR` repository.
+2. In **Settings → General → Root Directory**, set `frontend`
+   (Vercel auto-detects Next.js 14; no extra build settings needed).
+3. In **Settings → Environment Variables**, add:
+
+   | Variable | Value |
+   | -------- | ----- |
+   | `AEGIS_API_URL` | `https://aegis-sar-backend.onrender.com` (your Render URL from step 1.4) |
+   | `NEXT_PUBLIC_AEGIS_TOKEN` | The same zero-trust token set on Render |
+
+4. Deploy. The `next.config.js` rewrite proxies dashboard calls from
+   `/api/*` → `$AEGIS_API_URL/api/*`, so the backend must be reachable before
+   the build caches the rewrite target (`NEXT_PUBLIC_*` and rewrite values are
+   inlined at build time — redeploy after changing them).
+
+### 3. Post-deploy smoke test
+
+```bash
+curl https://aegis-sar-backend.onrender.com/        # health check
+curl -X POST https://aegis-sar-backend.onrender.com/api/v1/analyze-slick \
+  -H "Content-Type: application/json" \
+  -H "X-ZeroTrust-Token: <token>" \
+  -d '{"sector_id": "mumbai_high_offshore"}'
+```
+
+---
+
 _Project AEGIS-SAR (SIH26143) · NTRO Maritime Intelligence · Next.js 14 / FastAPI / PyTorch-oriented pipeline._
