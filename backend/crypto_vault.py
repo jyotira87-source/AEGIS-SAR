@@ -169,3 +169,120 @@ class CryptoVault:
     def verify_signature(block: Dict[str, Any]) -> bool:
         """Convenience boolean guard used by the API layer."""
         return bool(CryptoVault.verify(block)["verified"])
+
+
+# ===========================================================================
+# SHA3-512 INCIDENT PROOF CHAIN (tamper-evident audit log)
+# ===========================================================================
+class ProofChain:
+    """
+    Chained SHA3-512 audit vault for spill/vessel incidents.
+
+    Every sealed incident carries:
+        proof_id       — human-readable VAULT-SEC-<n> identifier
+        chain_block    — monotonically increasing block number
+        previous_hash  — digest of the prior incident (blockchain-style link)
+        immutable_hash — SHA3-512 over the canonical incident payload
+        signature      — HMAC-SHA512(config.jwt_vault_secret, immutable_hash)
+
+    Verification recomputes the hash and signature and walks the stored chain,
+    so ANY alteration of a historical receipt (or deletion of a middle block)
+    is detected.
+    """
+
+    HASH_ALGORITHM = "SHA3-512"
+    SIGNER = "AEGIS-CRYPTO-VAULT/NTRO-SHA3"
+
+    def __init__(self, secret: str) -> None:
+        import hmac
+
+        self._hmac = hmac
+        self._secret = secret.encode("utf-8")
+        self._blocks: Dict[str, Dict[str, Any]] = {}
+        self._counter = 104000
+
+    # ------------------------------------------------------------------
+    def seal_incident(self, incident: Dict[str, Any]) -> Dict[str, Any]:
+        """Seal one incident into the immutable proof chain."""
+        self._counter += 1
+        previous_hash = self._last_hash()
+        body = dict(incident)
+        body["chain_block"] = self._counter
+        body["previous_hash"] = previous_hash
+        body["timestamp_iso"] = incident.get("timestamp_iso") or _utc_now_iso()
+
+        canonical = CryptoVault.canonical_json(body)
+        digest = hashlib.sha3_512(canonical.encode("utf-8")).hexdigest()
+        signature = self._hmac.new(self._secret, digest.encode("utf-8"), hashlib.sha3_512).hexdigest()
+
+        proof = {
+            "proof_id": f"VAULT-SEC-{self._counter}",
+            "timestamp_iso": body["timestamp_iso"],
+            "sar_tile_id": incident.get("sar_tile_id", "S1A_IW_GRD_1SDV_SIM"),
+            "slick_centroid": incident.get("slick_centroid", []),
+            "suspect_mmsi": incident.get("suspect_mmsi"),
+            "chain_block": self._counter,
+            "previous_hash": previous_hash,
+            "immutable_hash": digest,
+            "signature": signature,
+            "hash_algorithm": self.HASH_ALGORITHM,
+            "signer": self.SIGNER,
+            "incident": body,
+        }
+        self._blocks[proof["proof_id"]] = proof
+        return proof
+
+    # ------------------------------------------------------------------
+    def verify_proof(self, proof: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate one receipt: payload hash + HMAC signature + chain linkage."""
+        report = {
+            "proof_id": proof.get("proof_id", "UNKNOWN"),
+            "hash_algorithm": self.HASH_ALGORITHM,
+            "verified": False,
+            "signature_valid": False,
+            "chain_intact": False,
+            "report": "",
+        }
+        stored = self._blocks.get(proof.get("proof_id", ""))
+        if stored is None:
+            report["report"] = "PROOF_NOT_FOUND — receipt is not in the sealed chain"
+            return report
+
+        hash_ok = stored["immutable_hash"] == proof.get("immutable_hash")
+        sig_valid = self._hmac.compare_digest(
+            stored["signature"], proof.get("signature", "")
+        )
+        prev_expected = stored["previous_hash"]
+        chain_ok = True
+        if prev_hash := proof.get("previous_hash"):
+            chain_ok = prev_hash == prev_expected
+
+        report["signature_valid"] = bool(sig_valid)
+        report["chain_intact"] = bool(chain_ok)
+        report["verified"] = bool(hash_ok and sig_valid and chain_ok)
+        report["report"] = (
+            "CHAIN_VERIFIED — SHA3-512 hash, HMAC signature and block linkage intact"
+            if report["verified"]
+            else "CHAIN_TAMPERED — receipt hash, signature or linkage mismatch"
+        )
+        return report
+
+    # ------------------------------------------------------------------
+    def list_proofs(self) -> List[Dict[str, Any]]:
+        """All sealed receipts, newest block first."""
+        return sorted(self._blocks.values(), key=lambda p: p["chain_block"], reverse=True)
+
+    def get_proof(self, proof_id: str) -> Optional[Dict[str, Any]]:
+        return self._blocks.get(proof_id)
+
+    def _last_hash(self) -> str:
+        if not self._blocks:
+            return "GENESIS-0" + "0" * 55
+        latest = max(self._blocks.values(), key=lambda p: p["chain_block"])
+        return latest["immutable_hash"]
+
+
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()

@@ -1,14 +1,16 @@
 import "./globals.css";
+import ClientLayout from "./ClientLayout";
 
 export const metadata = {
   title: "AEGIS-SAR // NTRO Maritime Intelligence",
   description:
-    "Automated SAR oil slick segmentation & AIS vessel attribution — Project AEGIS-SAR (SIH26143).",
+    "Real-time maritime vessel tracking & SAR spill intelligence — Project AEGIS-SAR (SIH26143).",
   keywords: [
     "SAR",
     "oil spill",
     "Sentinel-1",
     "AIS",
+    "vessel tracking",
     "maritime surveillance",
     "NTRO",
     "AEGIS-SAR",
@@ -25,7 +27,7 @@ export const metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#0B0F19",
+  themeColor: "#020617",
 };
 
 export default function RootLayout({ children }) {
@@ -39,7 +41,9 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ClientLayout>{children}</ClientLayout>
+      </body>
     </html>
   );
 }

@@ -10,6 +10,7 @@ into an immutable SpillPayload block.
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Union
 
@@ -203,3 +204,117 @@ class VaultVerifyResponse(BaseModel):
 def utc_now_iso() -> str:
     """UTC ISO-8601 with microseconds, e.g. 2026-05-09T12:34:56.789012+00:00."""
     return datetime.now(timezone.utc).isoformat()
+
+
+# ===========================================================================
+# REAL-TIME VESSEL TRACKING (live AIS + high-fidelity simulation)
+# ===========================================================================
+class VesselType(str, enum.Enum):
+    CARGO = "CARGO"
+    TANKER = "TANKER"
+    CONTAINER = "CONTAINER"
+    FISHING = "FISHING"
+    PASSENGER = "PASSENGER"
+    MILITARY = "MILITARY"
+    TUG = "TUG"
+    UNKNOWN = "UNKNOWN"
+
+
+class NavigationStatus(str, enum.Enum):
+    UNDER_WAY_ENGINE = "UNDER_WAY_ENGINE"
+    AT_ANCHOR = "AT_ANCHOR"
+    NOT_UNDER_COMMAND = "NOT_UNDER_COMMAND"
+    RESTRICTED_MANOEUVRABILITY = "RESTRICTED_MANOEUVRABILITY"
+    MOORED = "MOORED"
+    AGROUND = "AGROUND"
+    AIS_SART = "AIS_SART"
+
+
+class VesselPosition(BaseModel):
+    """One AIS position report — live feed or simulation, same wire format."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mmsi: int
+    ship_name: str
+    imo: Optional[int] = None
+    callsign: str = ""
+    vessel_type: VesselType = VesselType.UNKNOWN
+    latitude: float = Field(ge=-90.0, le=90.0)
+    longitude: float = Field(ge=-180.0, le=180.0)
+    speed_knots: float = Field(ge=0.0, le=60.0)
+    course_over_ground: float = Field(ge=0.0, le=360.0)
+    true_heading: float = Field(ge=0.0, le=360.0)
+    nav_status: NavigationStatus = NavigationStatus.UNDER_WAY_ENGINE
+    destination: str = ""
+    eta: str = ""
+    draught: float = Field(default=6.0, ge=0.0, le=25.0)
+    length: float = Field(default=120.0, ge=0.0, le=500.0)
+    width: float = Field(default=18.0, ge=0.0, le=70.0)
+    flag_country: str = ""
+    timestamp_epoch: float
+    is_dark_vessel: bool = False
+
+
+class SARAnomalyRecord(BaseModel):
+    """One CFAR-detected slick anomaly with correlation + cryptographic seal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    anomaly_id: str
+    timestamp: str
+    polygon_coordinates: List[List[float]]  # [[lon, lat], ...] outer ring
+    centroid: List[float]  # [lon, lat]
+    slick_area_sq_km: float
+    estimated_discharge_volume_m3: float
+    confidence_score: float = Field(ge=0.0, le=100.0)
+    suspect_vessel_mmsi: Optional[int] = None
+    cryptographic_hash: str = ""
+    signature: str = ""
+
+
+class FilterSettings(BaseModel):
+    """Runtime vessel filter matrix (applied server-side on the live feed)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_speed: float = Field(default=0.0, ge=0.0, le=60.0)
+    max_speed: float = Field(default=60.0, ge=0.0, le=60.0)
+    vessel_types: List[str] = Field(default_factory=list)
+    search_query: str = ""
+    show_dark_targets_only: bool = False
+    bbox: Optional[List[float]] = None  # [S, W, N, E]
+
+
+class TelemetryStats(BaseModel):
+    """Aggregated live-stream statistics broadcast on the WebSocket."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_ships: int
+    dark_vessels: int
+    active_slicks: int
+    feed_mode: str = "SIMULATION"
+    update_interval_seconds: float = 1.0
+
+
+class RuntimeSettingsPayload(BaseModel):
+    """GET/POST /api/v1/settings — live runtime controls."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    feed_mode: str = Field(default="auto", pattern="^(auto|live|simulation)$")
+    broadcast_interval_ms: int = Field(default=1000, ge=250, le=2000)
+    simulation_vessel_count: int = Field(default=350, ge=50, le=1000)
+    simulation_speed: float = Field(default=1.0, ge=0.1, le=50.0)
+    dark_patch_sensitivity: float = Field(default=0.5, ge=0.1, le=1.0)
+    correlation_radius_nm: float = Field(default=50.0, ge=1.0, le=50.0)
+    lookback_hours: float = Field(default=6.0, ge=1.0, le=24.0)
+    filter: FilterSettings = Field(default_factory=FilterSettings)
+    chart_style: str = Field(default="tactical_dark", pattern="^(tactical_dark|bathymetry_deep|high_contrast_radar)$")
+    show_vessel_labels: bool = True
+    show_sar_overlay: bool = True
+    show_shipping_lanes: bool = False
+    animate_radar: bool = True
+    coordinate_format: str = Field(default="dd", pattern="^(dd|dms)$")
+    speed_unit: str = Field(default="knots", pattern="^(knots|kmh|mph)$")
