@@ -1,0 +1,283 @@
+/**
+ * PROJECT AEGIS-SAR (SIH26143)
+ * globals.css — Geo-Yield-Secure command & control styling layer.
+ * Ultra-dark maritime defense canvas with radar FX, frosted glass cards,
+ * gradient scrollbars and monospaced telemetry readouts.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --deep-space: #0b0f19;
+  --surface: rgba(17, 24, 39, 0.6);
+  --panel-border: rgba(148, 163, 184, 0.12);
+  --emerald: #10b981;
+  --emerald-hover: #34d399;
+  --emerald-glow: rgba(16, 185, 129, 0.35);
+  --cyan: #22d3ee;
+  --cyan-hover: #67e8f9;
+  --cyan-glow: rgba(34, 211, 238, 0.35);
+  --amber: #f59e0b;
+  --amber-hover: #fbbf24;
+  --amber-glow: rgba(245, 158, 11, 0.35);
+  --crimson: #f43f5e;
+  --crimson-glow: rgba(244, 63, 94, 0.45);
+  --ocean-grid: #0d1524;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--deep-space);
+  background-image: radial-gradient(circle at 50% -10%, rgba(34, 211, 238, 0.06), transparent 55%);
+  color: #e2e8f0;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+/* ------------------------------------------------------------------ */
+/* Custom scrollbar — emerald to cyan gradient                         */
+/* ------------------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0f19;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #10b981, #22d3ee);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #34d399, #67e8f9);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #10b981 #0b0f19;
+}
+
+/* ------------------------------------------------------------------ */
+/* Component utilities                                                 */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .glass-card {
+    background: rgba(17, 24, 39, 0.6);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 1rem;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .panel-border {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .text-gradient {
+    background: linear-gradient(120deg, #10b981 0%, #34d399 25%, #22d3ee 60%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .coord-readout {
+    font-family: "JetBrains Mono", "Courier New", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+  }
+
+  .telemetry-mono {
+    font-family: "JetBrains Mono", "Courier New", monospace;
+  }
+
+  .target-grid {
+    background-image: radial-gradient(ellipse at 50% 50%, rgba(34, 211, 238, 0.08), transparent 70%);
+    background-color: #0d1524;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Radar FX keyframes                                                  */
+/* ------------------------------------------------------------------ */
+
+/* Rotating conic-grad beam */
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(34, 211, 238, 0.0) 0deg,
+    rgba(34, 211, 238, 0.05) 60deg,
+    rgba(16, 185, 129, 0.18) 150deg,
+    rgba(34, 211, 238, 0.42) 210deg,
+    rgba(16, 185, 129, 0.02) 270deg,
+    rgba(34, 211, 238, 0.0) 360deg
+  );
+  animation: radar-sweep 4s linear infinite;
+  mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 62%, rgba(0, 0, 0, 0.0) 100%);
+  -webkit-mask-image: radial-gradient(circle, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.92) 62%, rgba(0, 0, 0, 0.0) 100%);
+}
+
+@keyframes radar-sweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Vertical scanline descending every 2.4s */
+.radar-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.75), rgba(16, 185, 129, 0.9), rgba(34, 211, 238, 0.75), transparent);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.75);
+  animation: radar-scanline 2.4s ease-in-out infinite;
+}
+
+@keyframes radar-scanline {
+  0% {
+    top: -4%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    top: 104%;
+    opacity: 0;
+  }
+}
+
+/* Concentric range rings */
+.radar-disc {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  box-shadow: inset 0 0 60px rgba(34, 211, 238, 0.05);
+}
+
+.radar-disc::after {
+  content: "";
+  position: absolute;
+  inset: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: #22d3ee;
+  box-shadow: 0 0 8px 2px rgba(34, 211, 238, 0.85);
+}
+
+/* Contact (vessel/slick) blips */
+.radar-blip {
+  position: absolute;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.9);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.9) 0%, rgba(16, 185, 129, 0.15) 60%, transparent 100%);
+  animation: radar-blip 2.0s ease-in-out infinite;
+}
+
+.radar-blip--cyan {
+  border-color: rgba(34, 211, 238, 0.9);
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.9) 0%, rgba(34, 211, 238, 0.15) 60%, transparent 100%);
+}
+
+.radar-blip--crimson {
+  border-color: rgba(239, 68, 68, 0.95);
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.95) 0%, rgba(244, 63, 94, 0.2) 60%, transparent 100%);
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.6);
+}
+
+@keyframes radar-blip {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+}
+
+/* Pulsating crimson slick polygon fill */
+.slick-pulse {
+  animation: slick-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes slick-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Suspect lock ring */
+.suspect-lock {
+  animation: suspect-lock 1.2s ease-in-out infinite;
+}
+
+@keyframes suspect-lock {
+  0%,
+  100% {
+    stroke-width: 2;
+    opacity: 1;
+  }
+  50% {
+    stroke-width: 4.5;
+    opacity: 0.45;
+  }
+}
+
+/* Blinking label */
+.blink {
+  animation: blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Status dots */
+.status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.9);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Selection + focus consistency */
+::selection {
+  background: rgba(16, 185, 129, 0.35);
+  color: #f0fdf4;
+}
