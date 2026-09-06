@@ -157,19 +157,45 @@ export function LiveAISProvider({ children }) {
     }, delay);
   }, [connect]);
 
+  // REST fallback: poll /api/v1/vessels when WebSocket is not live.
+  const restFallback = useCallback(async () => {
+    if (deadRef.current || !mountedRef.current) return;
+    try {
+      const res = await fetch("/api/v1/vessels?limit=500");
+      if (!res.ok) return;
+      const data = await res.json();
+      const arr = Array.isArray(data) ? data : data?.vessels ?? [];
+      if (arr.length > 0 && connection !== "LIVE") {
+        latestBatchRef.current = arr;
+        setVessels(arr);
+        setStats((s) => ({
+          ...s,
+          total_ships: arr.length,
+          dark_vessels: arr.filter((v) => v.is_dark_vessel).length,
+          feed_mode: "REST-POLL",
+        }));
+      }
+    } catch {
+      /* noop */
+    }
+  }, [connection]);
+
   useEffect(() => {
     mountedRef.current = true;
     connect();
+    restFallback(); // initial fetch so UI isn't empty before WS connects
     const keepalive = setInterval(() => {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send("ping");
       }
     }, KEEPALIVE_MS);
+    const fallbackInterval = setInterval(restFallback, 5000);
     return () => {
       mountedRef.current = false;
       deadRef.current = true;
       clearInterval(keepalive);
+      clearInterval(fallbackInterval);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       try {
         wsRef.current?.close();
@@ -177,7 +203,7 @@ export function LiveAISProvider({ children }) {
         /* noop */
       }
     };
-  }, [connect]);
+  }, [connect, restFallback]);
 
   const value = useMemo(
     () => ({

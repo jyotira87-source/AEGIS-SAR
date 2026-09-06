@@ -38,7 +38,16 @@ export default function SarAnalysisPage() {
         headers: { "Content-Type": "application/json", "X-ZeroTrust-Token": TOKEN },
         body: JSON.stringify({ lat: la, lon: lo, sensitivity: sens }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        if (res.status === 404) {
+          throw new Error("SAR endpoint not found — is the AEGIS backend running on port 8000?");
+        }
+        if (res.status === 401) {
+          throw new Error("Zero-trust token rejected — check NEXT_PUBLIC_AEGIS_TOKEN");
+        }
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 120)}`);
+      }
       const data = await res.json();
       setResult(data);
     } catch (e) {
