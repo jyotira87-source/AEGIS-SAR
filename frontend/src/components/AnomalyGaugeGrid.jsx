@@ -10,13 +10,22 @@ import { Droplets, Waves, Target, AlertOctagon } from "lucide-react";
  * vector, and vessel attribution confidence gauge.
  */
 export default function AnomalyGaugeGrid({ slick, drift, vessels }) {
-  const area = slick?.area_sq_km ?? 0;
+  // Sleek fallback states: missing payload fields degrade to "---" instead of 0.
+  const fmt = (v, digits = 2) =>
+    v === null || v === undefined || Number.isNaN(v) ? "---" : Number(v).toFixed(digits);
+
+  const area = slick?.area_sq_km ?? null;
   // Volume estimate: slick area × representative thickness (mean ~0.9 mm).
-  const volumeLitres = useMemo(() => area * 1e6 * 0.0009, [area]);
+  const volumeLitres = useMemo(() => (area ?? 0) * 1e6 * 0.0009, [area]);
   const volumeBarrels = volumeLitres / 158.987;
 
-  const topConfidence = vessels?.length ? Math.max(...vessels.map((v) => v.correlation_confidence_pct ?? 0)) : 0;
-  const atten = Math.abs(slick?.mean_contrast_dB ?? 0);
+  const topConfidence = vessels?.length
+    ? Math.max(...vessels.map((v) => v.correlation_confidence_pct ?? 0))
+    : null;
+  const atten = slick?.mean_contrast_dB != null ? Math.abs(slick.mean_contrast_dB) : null;
+  const maxAtten = slick?.max_attenuation_dB != null ? Math.abs(slick.max_attenuation_dB) : null;
+  const driftSpeed = drift?.resultant_speed_knots ?? null;
+  const driftBearing = drift?.resultant_bearing_deg ?? null;
 
   const cards = [
     {
@@ -25,9 +34,12 @@ export default function AnomalyGaugeGrid({ slick, drift, vessels }) {
       accent: "text-crimson-400",
       border: "border-crimson-500/25",
       bg: "bg-crimson-500/8",
-      primary: `${area.toFixed(2)}`,
+      primary: fmt(area),
       unit: "km²",
-      secondary: `VOL ~ ${volumeBarrels.toFixed(0)} bbl · ${(volumeLitres / 1000).toFixed(0)} m³`,
+      secondary:
+        area != null
+          ? `VOL ~ ${volumeBarrels.toFixed(0)} bbl · ${(volumeLitres / 1000).toFixed(0)} m³`
+          : "AWAITING SAR SEGMENTATION",
     },
     {
       icon: Waves,
@@ -35,9 +47,9 @@ export default function AnomalyGaugeGrid({ slick, drift, vessels }) {
       accent: "text-amber-400",
       border: "border-amber-500/25",
       bg: "bg-amber-500/8",
-      primary: atten.toFixed(2),
+      primary: fmt(atten),
       unit: "-dB",
-      secondary: `CORE ${Math.abs(slick?.max_attenuation_dB ?? 0).toFixed(2)} dB`,
+      secondary: maxAtten != null ? `CORE ${fmt(maxAtten)} dB` : "NO RADAR CONTRAST DATA",
     },
     {
       icon: Target,
@@ -45,15 +57,18 @@ export default function AnomalyGaugeGrid({ slick, drift, vessels }) {
       accent: "text-cyan-400",
       border: "border-cyan-400/25",
       bg: "bg-cyan-400/8",
-      primary: (drift?.resultant_speed_knots ?? 0).toFixed(2),
+      primary: fmt(driftSpeed),
       unit: "kn",
-      secondary: `@ ${(drift?.resultant_bearing_deg ?? 0).toFixed(0)}° BEARING · ${drift?.tidal_stage ?? "--"}`,
+      secondary:
+        driftBearing != null
+          ? `@ ${driftBearing.toFixed(0)}° BEARING · ${drift?.tidal_stage ?? "--"}`
+          : "NO OCEANOGRAPHIC FEED",
     },
   ];
 
   const r = 40;
   const circumference = 2 * Math.PI * r;
-  const dash = (topConfidence / 100) * circumference;
+  const dash = ((topConfidence ?? 0) / 100) * circumference;
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -104,7 +119,10 @@ export default function AnomalyGaugeGrid({ slick, drift, vessels }) {
             />
           </svg>
           <div>
-            <p className="text-2xl font-extrabold text-slate-100 telemetry-mono">{topConfidence.toFixed(1)}<span className="text-sm text-slate-500">%</span></p>
+            <p className="text-2xl font-extrabold text-slate-100 telemetry-mono">
+              {topConfidence != null ? topConfidence.toFixed(1) : "---"}
+              <span className="text-sm text-slate-500">%</span>
+            </p>
             <p className="text-[10px] font-mono text-slate-500">
               {topConfidence > 80 ? "HIGH-ALERT — GUILT LOCKED" : topConfidence > 30 ? "MODERATE — REVIEW" : "LOW RISK"}
             </p>

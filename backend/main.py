@@ -121,11 +121,11 @@ def _resolve_coordinates(query: CoordinateQuery) -> Dict:
 
 
 # ---------------------------------------------------------------------------
-# HEALTH CHECK
+# HEALTH CHECK — unauthenticated liveness probe (Render healthCheckPath "/").
+# Zero-trust enforcement remains on all intelligence endpoints below.
 # ---------------------------------------------------------------------------
 @app.get("/")
-def health(zero_trust_token: Optional[str] = Header(default=None, alias="X-ZeroTrust-Token")):
-    _require_zero_trust(zero_trust_token)
+def health():
     return {
         "status": "OPERATIONAL",
         "service": "AEGIS-SAR Maritime Intelligence Core",

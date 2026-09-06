@@ -7,7 +7,7 @@ import { Radar, Eye, AlertTriangle } from "lucide-react";
  * VesselCorrelationTable — all vessels detected inside the spatio-temporal
  * envelope, ranked by guilt probability with colour-coded threat badges.
  */
-export default function VesselCorrelationTable({ vessels = [], onInspect, onOpenProof }) {
+export default function VesselCorrelationTable({ vessels = [], focusedMmsi = null, onInspect, onOpenProof }) {
   const sorted = [...vessels].sort((a, b) => (b.guilt_score ?? 0) - (a.guilt_score ?? 0));
 
   const badge = (g) => {
@@ -74,7 +74,7 @@ export default function VesselCorrelationTable({ vessels = [], onInspect, onOpen
                 key={v.mmsi}
                 className={`border-b border-white/5 transition-colors hover:bg-white/[0.03] ${
                   v.guilt_score > 85 ? "bg-crimson-500/[0.06]" : ""
-                }`}
+                } ${focusedMmsi === v.mmsi ? "!bg-cyan-400/[0.09] ring-1 ring-inset ring-cyan-400/40" : ""}`}
               >
                 <td className="px-4 py-3 font-mono text-[11px] text-cyan-300 whitespace-nowrap">{v.mmsi}</td>
                 <td className="px-4 py-3 text-xs font-medium text-slate-200 whitespace-nowrap">

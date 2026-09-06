@@ -26,14 +26,15 @@ aegis-sar/
     ├── public/data/sample_detection.json
     └── src/
         ├── app/                      # layout.js, page.js, globals.css
-        └── components/               # 8 tactical UI widgets
+        └── components/               # 9 tactical UI widgets incl. MapLibre satellite map
 ```
 
 ## Detection Pipeline
 
 1. **SAR Layer** — Synthetic Sentinel-1 C-band (VV/VH, IW swath) dark-patch generation with
    slick area (4.2–28.5 km²), perimeter, circularity index, major-axis orientation, radar
-   contrast (−3.5 to −8.2 dB) and a tidal+wind driven centroid drift model.
+   contrast (−3.5 to −8.2 dB) and a tidal+wind driven centroid drift model. Slick geometry is
+   emitted as WGS84 GeoJSON multi-polygons (core + sheen rings) centred on the request point.
 2. **AIS Layer** — Simulated transponder streams within a 50 km reconnaissance radius,
    6-hour trajectory reconstruction using SLERP (Spherical Linear Interpolation), and a
    weighted spatio-temporal intersection guilt heuristic:
@@ -109,6 +110,14 @@ npm run dev          # http://localhost:3000
 The Next.js dev server proxies `/api/*` to `http://127.0.0.1:8000/api/*`. If the backend
 is offline the dashboard automatically falls back to a bundled sample intelligence block
 (`public/data/sample_detection.json`) so the full UI can be evaluated independently.
+
+### Satellite Map (token-free)
+
+`InteractiveVesselMap.jsx` renders **real satellite imagery** via MapLibre GL with free
+**Esri World Imagery** raster tiles — no Mapbox token or account is required. It draws the
+crimson slick polygon, dashed historical AIS trails, hover popups (MMSI / speed / guilt),
+a flashing red target marker on the high-guilt offender, and `flyTo` choreography when a
+new sector is analysed or a vessel is selected via **INSPECT TELEMETRY**.
 
 ## Operational Sectors
 

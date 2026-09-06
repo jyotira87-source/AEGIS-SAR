@@ -149,8 +149,29 @@ export default function Page() {
             <span className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono">
               <ShieldCheck className="w-3.5 h-3.5" /> ZERO-TRUST ENFORCED
             </span>
-            <span className="flex items-center gap-1.5 px-3 py-1 rounded-md border border-amber-500/25 bg-amber-500/10 text-amber-400 text-[10px] font-mono">
-              <Activity className="w-3.5 h-3.5" /> {backendMode}
+            {/* Live API Connection Status — pulsing emerald when the backend
+                ping succeeds, glowing red when unreachable. */}
+            <span
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-[10px] font-mono ${
+                backendMode === "LIVE"
+                  ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-400"
+                  : "border-crimson-500/30 bg-crimson-500/10 text-crimson-400"
+              }`}
+              title={
+                backendMode === "LIVE"
+                  ? "FastAPI backend reachable"
+                  : "Backend unreachable — running on bundled demo block"
+              }
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  backendMode === "LIVE"
+                    ? "bg-emerald-500 shadow-glow-emerald animate-pulse"
+                    : "bg-crimson-500 shadow-glow-crimson animate-pulse"
+                }`}
+              />
+              <Activity className="w-3.5 h-3.5" />
+              {backendMode === "LIVE" ? "LIVE API CONNECTED" : backendMode === "CONNECTING" ? "API PENDING" : "API OFFLINE · DEMO"}
             </span>
           </div>
         </div>
@@ -226,7 +247,7 @@ export default function Page() {
             <RadarScanOverlay className="hidden lg:block" />
           </div>
 
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 relative">
             <InteractiveVesselMap
               center={activeCenter}
               sectorName={block?.sector_name ?? undefined}
@@ -235,6 +256,19 @@ export default function Page() {
               focusedMmsi={focusedMmsi}
               sectors={sectors}
             />
+
+            {/* Radar scan overlay — covers the satellite map while the
+                pipeline executes, then fades out revealing the result. */}
+            <motion.div
+              initial={false}
+              animate={{ opacity: running ? 1 : 0 }}
+              transition={{ duration: 0.7 }}
+              className={`absolute inset-0 z-20 rounded-2xl overflow-hidden bg-[#0b0f19]/80 backdrop-blur-sm ${
+                running ? "pointer-events-auto" : "pointer-events-none"
+              }`}
+            >
+              {running && <RadarScanOverlay className="h-full !rounded-2xl" />}
+            </motion.div>
           </div>
         </div>
 
@@ -249,6 +283,7 @@ export default function Page() {
           <div>
             <VesselCorrelationTable
               vessels={vessels}
+              focusedMmsi={focusedMmsi}
               onInspect={(mmsi) => setFocusedMmsi(mmsi)}
               onOpenProof={block ? () => setProofOpen(true) : null}
             />
