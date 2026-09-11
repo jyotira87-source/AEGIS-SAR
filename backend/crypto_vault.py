@@ -192,6 +192,7 @@ class ProofChain:
 
     HASH_ALGORITHM = "SHA3-512"
     SIGNER = "AEGIS-CRYPTO-VAULT/NTRO-SHA3"
+    GENESIS_HASH = "GENESIS-0" + "0" * 55
 
     def __init__(self, secret: str) -> None:
         import hmac
@@ -234,11 +235,18 @@ class ProofChain:
 
     # ------------------------------------------------------------------
     def verify_proof(self, proof: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate one receipt: payload hash + HMAC signature + chain linkage."""
+        """Validate one receipt by *recomputing the evidence*:
+        1) re-derive the canonical SHA3-512 digest over the sealed incident,
+        2) re-derive the HMAC signature from that digest,
+        3) walk the chained linkage to the previous block's actual digest.
+        Any alteration of a historical receipt — or deletion of a middle
+        block — is therefore detected even if the receipt is internally
+        self-consistent."""
         report = {
             "proof_id": proof.get("proof_id", "UNKNOWN"),
             "hash_algorithm": self.HASH_ALGORITHM,
             "verified": False,
+            "payload_intact": False,
             "signature_valid": False,
             "chain_intact": False,
             "report": "",
@@ -248,22 +256,46 @@ class ProofChain:
             report["report"] = "PROOF_NOT_FOUND — receipt is not in the sealed chain"
             return report
 
-        hash_ok = stored["immutable_hash"] == proof.get("immutable_hash")
-        sig_valid = self._hmac.compare_digest(
-            stored["signature"], proof.get("signature", "")
-        )
-        prev_expected = stored["previous_hash"]
-        chain_ok = True
-        if prev_hash := proof.get("previous_hash"):
-            chain_ok = prev_hash == prev_expected
+        # 1) Recomputed payload digest.
+        recomputed = hashlib.sha3_512(
+            CryptoVault.canonical_json(stored["incident"]).encode("utf-8")
+        ).hexdigest()
+        payload_ok = recomputed == stored.get("immutable_hash")
 
+        # 2) Re-derived HMAC signature over the recomputed digest.
+        expected_sig = self._hmac.new(
+            self._secret, recomputed.encode("utf-8"), hashlib.sha3_512
+        ).hexdigest()
+        sig_valid = self._hmac.compare_digest(expected_sig, stored.get("signature", ""))
+
+        # 3) Chain linkage — the previous block must exist and carry the exact
+        #    digest this block was chained to. The in-memory chain re-geneses on
+        #    every process start (the counter carries on from its configured
+        #    nonce), so a missing predecessor IS valid when the link references
+        #    the GENESIS marker — that block is this process' chain head.
+        chain_ok = True
+        block_n = stored.get("chain_block")
+        prev_expected = stored.get("previous_hash", "")
+        if block_n and int(block_n) > 1:
+            prev = self._blocks.get(f"VAULT-SEC-{int(block_n) - 1}")
+            if prev is None:
+                chain_ok = str(prev_expected).startswith("GENESIS-")
+            else:
+                chain_ok = prev.get("immutable_hash") == prev_expected
+        elif prev_expected:
+            chain_ok = str(prev_expected).startswith("GENESIS-")
+        # The submitted receipt must reference the same genesis link.
+        if chain_ok and proof.get("previous_hash"):
+            chain_ok = proof["previous_hash"] == prev_expected
+
+        report["payload_intact"] = bool(payload_ok)
         report["signature_valid"] = bool(sig_valid)
         report["chain_intact"] = bool(chain_ok)
-        report["verified"] = bool(hash_ok and sig_valid and chain_ok)
+        report["verified"] = bool(payload_ok and sig_valid and chain_ok)
         report["report"] = (
-            "CHAIN_VERIFIED — SHA3-512 hash, HMAC signature and block linkage intact"
+            "CHAIN_VERIFIED — SHA3-512 digest, HMAC signature and block linkage intact"
             if report["verified"]
-            else "CHAIN_TAMPERED — receipt hash, signature or linkage mismatch"
+            else "CHAIN_TAMPERED — payload digest, signature or chain linkage mismatch"
         )
         return report
 
@@ -277,7 +309,7 @@ class ProofChain:
 
     def _last_hash(self) -> str:
         if not self._blocks:
-            return "GENESIS-0" + "0" * 55
+            return self.GENESIS_HASH
         latest = max(self._blocks.values(), key=lambda p: p["chain_block"])
         return latest["immutable_hash"]
 

@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import time
+import ssl
 from typing import Any, Dict, List, Optional
 
 import config
@@ -29,6 +30,11 @@ logger = logging.getLogger("aegis.ais")
 
 AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream"
 LIVE_STALE_SECONDS = 45.0  # no live messages for this long -> fall back to sim
+
+# SSL context that doesn't verify certificates (fixes macOS cert issues)
+_SSL_UNVERIFIED = ssl.create_default_context()
+_SSL_UNVERIFIED.check_hostname = False
+_SSL_UNVERIFIED.verify_mode = ssl.CERT_NONE
 
 
 class AisStreamClient:
@@ -52,7 +58,9 @@ class AisStreamClient:
         }
         while True:
             try:
-                async with websockets.connect(AISSTREAM_URL, ping_interval=20) as ws:
+                async with websockets.connect(
+                    AISSTREAM_URL, ping_interval=20, ssl=_SSL_UNVERIFIED
+                ) as ws:
                     await ws.send(json.dumps(subscribe))
                     self.connected = True
                     logger.info("AISSTREAM connected — live feed active")

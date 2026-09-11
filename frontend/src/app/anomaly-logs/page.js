@@ -10,8 +10,6 @@ import {
 import { useLiveAIS } from "@/context/LiveAISContext";
 import CryptographicProofModal from "@/components/CryptographicProofModal";
 
-const TOKEN = process.env.NEXT_PUBLIC_AEGIS_TOKEN ?? "";
-
 function formatTimestamp(ts) {
   if (!ts) return "—";
   return String(ts).replace("T", " ").slice(0, 19);
@@ -20,7 +18,6 @@ function formatTimestamp(ts) {
 export default function AnomalyLogsPage() {
   const { slicks } = useLiveAIS();
   const [query, setQuery] = useState("");
-  const [selectedProof, setSelectedProof] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState(null);
 
@@ -40,18 +37,35 @@ export default function AnomalyLogsPage() {
       setExporting(true);
       setExportMsg(null);
       try {
-        const res = await fetch(
-          `/api/v1/sar/detections?format=${format}&token=${encodeURIComponent(TOKEN)}`
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const blob = await res.blob();
+        let blob;
+        const filename = `aegis-sar-vault-${Date.now()}.${format}`;
+        if (format === "json") {
+          blob = new Blob([JSON.stringify(slicks, null, 2)], { type: "application/json" });
+        } else {
+          const header = ["proof_id", "chain_block", "timestamp", "area_sq_km", "conf_pct", "suspect_mmsi", "vol_m3", "cryptographic_hash"];
+          const rows = slicks.map((s) =>
+            [
+              s.proof_id ?? "",
+              s.chain_block ?? "",
+              String(s.timestamp ?? "").slice(0, 19),
+              s.slick_area_sq_km ?? "",
+              s.confidence_score ?? "",
+              s.suspect_vessel_mmsi ?? "",
+              s.estimated_discharge_volume_m3 ?? "",
+              s.cryptographic_hash ?? "",
+            ].join(",")
+          );
+          blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
+        }
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `aegis-sar-detections.${format}`;
+        a.download = filename;
+        document.body.appendChild(a);
         a.click();
+        a.remove();
         URL.revokeObjectURL(url);
-        setExportMsg(`Exported ${slicks.length} detections as ${format.toUpperCase()}`);
+        setExportMsg(`Exported ${slicks.length} sealed records as ${format.toUpperCase()}`);
       } catch (e) {
         setExportMsg(`Export failed: ${e.message}`);
       } finally {
@@ -59,8 +73,29 @@ export default function AnomalyLogsPage() {
         setTimeout(() => setExportMsg(null), 4000);
       }
     },
-    [slicks.length]
+    [slicks]
   );
+
+  /** Real vault verification — fetches the full SHA3-512 receipt from the
+   * sealed chain and the live verification report before opening the modal. */
+  const [vault, setVault] = useState(null);
+  const openVault = useCallback(async (record) => {
+    setVault({ record, proof: null, verification: null });
+    try {
+      const [proofsRes, verifyRes] = await Promise.all([
+        fetch("/api/v1/crypto/proofs")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch(`/api/v1/crypto/verify/${encodeURIComponent(record.proof_id || "")}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      const proof = proofsRes?.proofs?.find((p) => p.proof_id === record.proof_id) ?? null;
+      setVault({ record, proof, verification: verifyRes });
+    } catch {
+      /* keep the record-only fallback view */
+    }
+  }, []);
 
   return (
     <div className="space-y-5 pb-16 lg:pb-0">
@@ -160,7 +195,7 @@ export default function AnomalyLogsPage() {
                   <td className="px-4 py-2.5 font-mono text-[11px] text-emerald-400">#{s.chain_block ?? "—"}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     <button
-                      onClick={() => setSelectedProof(s)}
+                      onClick={() => openVault(s)}
                       className="px-2.5 py-1 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[9px] font-mono hover:bg-emerald-500/20 transition-colors"
                     >
                       <ShieldCheck className="inline w-3 h-3 mr-1" />
@@ -174,7 +209,12 @@ export default function AnomalyLogsPage() {
         </div>
       </div>
 
-      <CryptographicProofModal block={selectedProof} onClose={() => setSelectedProof(null)} />
+      <CryptographicProofModal
+        block={vault?.record}
+        proof={vault?.proof}
+        verification={vault?.verification}
+        onClose={() => setVault(null)}
+      />
     </div>
   );
 }

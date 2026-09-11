@@ -299,9 +299,16 @@ class TelemetryStats(BaseModel):
 
 
 class RuntimeSettingsPayload(BaseModel):
-    """GET/POST /api/v1/settings — live runtime controls."""
+    """GET/POST /api/v1/settings — live runtime controls.
 
-    model_config = ConfigDict(extra="forbid")
+    extra="ignore": the command dashboard POSTs back the *full* settings echo
+    (including read-only display keys it received from GET, such as
+    `aisstream_api_key_configured`, `bounding_box`, `export_format`). Those are
+    display metadata, not runtime controls — tolerating them keeps the System
+    Config / Simulation panels working even if a stale UI snapshot is posted.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     feed_mode: str = Field(default="auto", pattern="^(auto|live|simulation)$")
     broadcast_interval_ms: int = Field(default=1000, ge=250, le=2000)

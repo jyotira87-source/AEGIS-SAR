@@ -13,11 +13,16 @@ import { useAlertSound } from "@/context/AlertSoundContext";
  */
 
 function useUtcClock() {
-  const [now, setNow] = useState(() => new Date());
+  // Hydration-safe UTC clock: initial state is `null` so the server render and
+  // the client's first (hydration) render are identical. The real timestamp is
+  // only computed after mount, inside useEffect, and then ticks every second.
+  const [now, setNow] = useState(null);
   useEffect(() => {
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
+  if (!now) return "····-··-·· ····:··:·· UTC"; // stable SSR/placeholder value
   return now.toISOString().slice(0, 19).replace("T", " ") + " UTC";
 }
 

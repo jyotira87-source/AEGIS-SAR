@@ -163,6 +163,7 @@ class VesselStateManager:
             }
             self._vessels[mmsi] = vessel
             self._record_breadcrumb(vessel, force=True)
+            self._seed_historical_trail(vessel)
 
     def resize(self, target_count: int) -> None:
         """Grow or shrink the simulated fleet (Settings → sim density slider)."""
@@ -178,6 +179,16 @@ class VesselStateManager:
             self._spawn_fleet()
             self.vessel_count = saved
         self.vessel_count = target_count
+
+    def reseed(self, seed: Optional[int] = None) -> None:
+        """Settings → RESET SIMULATION: re-spawn the fleet from a fresh RNG
+        seed so every vessel gets new identities, positions and trails."""
+        target_count = self.vessel_count
+        self._rng = random.Random(seed)
+        self._vessels = {}
+        self._mmsi_counter = 419000000
+        self.vessel_count = target_count
+        self._spawn_fleet()
 
     # ------------------------------------------------------------------
     # Physics / behaviour tick
@@ -264,6 +275,43 @@ class VesselStateManager:
         import datetime as _dt
         arrival = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=36.0)
         return arrival.strftime("%Y-%m-%d %H:%M UTC")
+
+    def _seed_historical_trail(self, v: Dict[str, Any], points: int = 32) -> None:
+        """Pre-fill the breadcrumb deque with back-dated, physically plausible
+        positions so the TRACK TRAIL panel has a visible historical line
+        immediately after a server start / RESET (not only after the simulator
+        has run long enough to sample real breadcrumbs)."""
+        now = time.time()
+        trail = v["trail"]
+        trail.clear()
+        step_s = 300.0  # 5-minute back-dated samples
+        # Underway vessels get a straight reciprocal track; anchored/moored
+        # vessels get a short "approach & stop" so the line still renders.
+        seed_speed = v["speed"] if v["speed"] >= 1 else 4.0
+        try:
+            for i in range(points, 0, -1):
+                dt_hr = (i * step_s) / 3600.0
+                d_km = min(seed_speed * 1.852 * dt_hr, 15.0)
+                lat, lon = _radial_point(v["lat"], v["lon"], d_km, (v["cog"] + 180.0) % 360.0)
+                trail.append(
+                    {
+                        "lat": round(lat, 5),
+                        "lon": round(lon, 5),
+                        "t": round(now - i * step_s, 1),
+                        "sog": round(seed_speed, 1),
+                    }
+                )
+            trail.append(
+                {
+                    "lat": round(v["lat"], 5),
+                    "lon": round(v["lon"], 5),
+                    "t": round(now, 1),
+                    "sog": round(v["speed"], 1),
+                }
+            )
+        except Exception:
+            trail.clear()
+        v["last_sample"] = now - self.sample_seconds  # resume breadcrumbs soon
 
     def _record_breadcrumb(self, v: Dict[str, Any], force: bool = False) -> None:
         """Decimated 24-hour trail sampling (one point per sample_seconds)."""

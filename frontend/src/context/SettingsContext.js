@@ -38,6 +38,36 @@ const DEFAULT_SETTINGS = {
   bounding_box: [8.0, 65.0, 31.5, 92.0],
 };
 
+/** Keys the backend RuntimeSettingsPayload actually accepts. Read-only display
+ * metadata (aisstream_api_key_configured, bounding_box, feed_resolved, …) is
+ * stripped before POSTing so the strict Pydantic model never rejects the save. */
+const RUNTIME_PAYLOAD_KEYS = [
+  "feed_mode",
+  "broadcast_interval_ms",
+  "simulation_vessel_count",
+  "simulation_speed",
+  "dark_patch_sensitivity",
+  "correlation_radius_nm",
+  "lookback_hours",
+  "filter",
+  "chart_style",
+  "show_vessel_labels",
+  "show_sar_overlay",
+  "show_shipping_lanes",
+  "animate_radar",
+  "coordinate_format",
+  "speed_unit",
+];
+
+/** Return a plain object containing only runtime-control keys. */
+export function toRuntimePayload(settings) {
+  const out = {};
+  for (const key of RUNTIME_PAYLOAD_KEYS) {
+    if (key in settings) out[key] = settings[key];
+  }
+  return out;
+}
+
 const SettingsContext = createContext(null);
 
 export function SettingsProvider({ children }) {
@@ -51,6 +81,9 @@ export function SettingsProvider({ children }) {
       const res = await fetch("/api/v1/settings");
       if (!res.ok) throw new Error(`settings HTTP ${res.status}`);
       const data = await res.json();
+      // Normalise feed_mode (backend returns display-caps "SIMULATION", the UI
+      // toggles compare lowercased "auto|live|simulation").
+      if (data.feed_mode) data.feed_mode = String(data.feed_mode).toLowerCase();
       setSettings((prev) => ({ ...prev, ...data }));
       setError(null);
     } catch (e) {
@@ -75,7 +108,7 @@ export function SettingsProvider({ children }) {
             "Content-Type": "application/json",
             "X-ZeroTrust-Token": process.env.NEXT_PUBLIC_AEGIS_TOKEN ?? "",
           },
-          body: JSON.stringify(patch),
+          body: JSON.stringify(toRuntimePayload(patch)),
         });
         if (!res.ok) throw new Error(`settings POST HTTP ${res.status}`);
         const data = await res.json();

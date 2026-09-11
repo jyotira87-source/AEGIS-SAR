@@ -256,6 +256,11 @@ async def _maybe_spawn_slick_event() -> None:
         "correlation_candidates": correlation["candidates"],
         "sar_meta": result["sar_meta"],
         "proof_id": proof["proof_id"],
+        "chain_block": proof["chain_block"],
+        "previous_hash": proof["previous_hash"],
+        "immutable_hash": proof["immutable_hash"],
+        "hash_algorithm": proof["hash_algorithm"],
+        "signer": proof["signer"],
     }
     ANOMALIES.insert(0, record)
     del ANOMALIES[50:]  # rolling evidence window
@@ -486,6 +491,11 @@ def sar_analyze_region(
             "correlation_candidates": correlation["candidates"],
             "sar_meta": result["sar_meta"],
             "proof_id": proof["proof_id"],
+            "chain_block": proof["chain_block"],
+            "previous_hash": proof["previous_hash"],
+            "immutable_hash": proof["immutable_hash"],
+            "hash_algorithm": proof["hash_algorithm"],
+            "signer": proof["signer"],
         }
         ANOMALIES.insert(0, record)
         sealed.append(record)
@@ -646,6 +656,25 @@ def post_settings(
         state.resize(payload.simulation_vessel_count)
     feed.mode_override = payload.feed_mode
     return get_settings()
+
+@app.post("/api/v1/settings/reset")
+def reset_simulation(
+    zero_trust_token: Optional[str] = Header(default=None, alias="X-ZeroTrust-Token"),
+):
+    """Settings → RESET SIMULATION: re-seed the fleet (fresh identities,
+    positions and trails), clear pending SAR anomaly records and restart the
+    feed override in simulation mode. Returns the active settings snapshot."""
+    _require_zero_trust(zero_trust_token)
+    global runtime
+    default_runtime = RuntimeSettingsPayload(feed_mode="simulation")
+    runtime = default_runtime
+    state.reseed()
+    state.resize(default_runtime.simulation_vessel_count)
+    ANOMALIES.clear()
+    VAULT_REGISTRY.clear()
+    feed.mode_override = "simulation"
+    return get_settings()
+
 
 # ---------------------------------------------------------------------------
 # LOCAL LAUNCH

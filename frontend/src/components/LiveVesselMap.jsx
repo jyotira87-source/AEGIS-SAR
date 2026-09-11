@@ -93,6 +93,7 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
   const [trailData, setTrailData] = useState(null);
   const [intercept, setIntercept] = useState(null);
   const [dossier, setDossier] = useState(null);
+  const [notice, setNotice] = useState(null); // tactical feedback banner
   const [dir, setDir] = useState(null); // interpolated dir between batches
   const [center, setCenter] = useState(DEFAULT_CENTER);
 
@@ -180,6 +181,17 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
   );
 
   // ---- Vessel interactions -------------------------------------------------
+  const noticeTimer = useRef(null);
+  const flashNotice = useCallback((text) => {
+    setNotice(text);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 4500);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+  }, []);
+
   const openDossier = useCallback((v) => {
     setDossier(v);
     setIntercept(null);
@@ -197,16 +209,61 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
       const res = await fetch(`/api/v1/vessels/${mmsi}`);
       if (!res.ok) throw new Error("trail unavailable");
       const data = await res.json();
-      setTrailData(data);
+      const pts = Array.isArray(data?.trail) ? data.trail : [];
+      const nm = data?.trail_length_nm ?? 0;
+      if (pts.length > 1) {
+        setTrailData(data);
+        setShowTrails(true);
+        flashNotice(`TRACK TRAIL RESTORED // ${pts.length} BREADCRUMBS · ${nm} NM RUN`);
+        const lats = pts.map((p) => p.lat);
+        const lons = pts.map((p) => p.lon);
+        try {
+          mapRef.current?.fitBounds?.(
+            [
+              [Math.min(...lons), Math.min(...lats)],
+              [Math.max(...lons), Math.max(...lats)],
+            ],
+            { padding: 70, duration: 1400, essential: true }
+          );
+        } catch {
+          /* noop */
+        }
+      } else {
+        setTrailData(null);
+        setShowTrails(false);
+        flashNotice("TRAIL INSUFFICIENT — SENSOR STILL ACCUMULATING BREADCRUMBS");
+      }
     } catch {
       setTrailData(null);
+      setShowTrails(false);
+      flashNotice("TRAIL UNAVAILABLE — BACKEND LINK FAILED");
     }
-  }, []);
+  }, [flashNotice]);
+
+  const toggleTrails = useCallback(() => {
+    if (showTrails) {
+      setShowTrails(false);
+      setTrailData(null);
+      return;
+    }
+    setShowTrails(true);
+    if (dossier) {
+      loadTrail(dossier.mmsi);
+    } else {
+      const mover = display.find((v) => (v.speed_knots ?? 0) >= 1);
+      if (mover) loadTrail(mover.mmsi);
+      else flashNotice("SELECT A VESSEL TO RESTORE ITS HISTORY");
+    }
+  }, [showTrails, dossier, display, loadTrail, flashNotice]);
 
   const computeIntercept = useCallback((v) => {
     const speedKts = v.speed_knots || 0;
     const cog = v.course_over_ground || 0;
-    if (speedKts < 1) return;
+    if (speedKts < 1) {
+      setIntercept(null);
+      flashNotice("TARGET STATIONARY — NO INTERCEPT VECTOR AVAILABLE");
+      return;
+    }
     const distNm = (speedKts * INTERCEPT_LOOKAHEAD_MIN) / 60.0;
     const dKm = distNm * 1.852;
     const rad = (cog * Math.PI) / 180;
@@ -216,7 +273,9 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
       from: [v.longitude, v.latitude],
       to: [v.longitude + dLon, v.latitude + dLat],
     });
-  }, []);
+    setTrailData(null);
+    flashNotice(`INTERCEPT VECTOR // ${INTERCEPT_LOOKAHEAD_MIN} MIN LEAD · BEARING ${cog.toFixed(0)}° · ${distNm.toFixed(1)} NM`);
+  }, [flashNotice]);
 
   const flyTo = useCallback((lat, lon, zoom) => {
     mapRef.current?.flyTo?.({ center: [lon, lat], zoom: zoom ?? FLEET_ZOOM, duration: 1600, essential: true });
@@ -260,7 +319,7 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
             SAR SLICKS
           </button>
           <button
-            onClick={() => { setShowTrails(!showTrails); }}
+            onClick={toggleTrails}
             className={`px-2.5 py-1 rounded-md border text-[9px] font-mono tracking-wider transition-colors ${
               showTrails ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-300" : "border-white/10 text-slate-500"
             }`}
@@ -306,8 +365,8 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
             </Source>
           )}
 
-          {/* Historical AIS trail */}
-          {trailGeo && (
+          {/* Historical AIS trail — only when the AIS TRAILS layer is armed */}
+          {showTrails && trailGeo && (
             <Source id="trails" type="geojson" data={trailGeo}>
               <Layer {...layerDefs.trails} />
             </Source>
@@ -318,6 +377,16 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
             <Source id="events" type="geojson" data={interceptGeo}>
               <Layer {...layerDefs.events} />
             </Source>
+          )}
+
+          {/* Intercept endpoint marker */}
+          {intercept && intercept.to?.length === 2 && (
+            <Marker longitude={intercept.to[0]} latitude={intercept.to[1]} anchor="center">
+              <span className="relative flex items-center justify-center">
+                <span className="absolute w-6 h-6 rounded-full border-2 border-cyan-300/70 animate-ping" />
+                <span className="relative w-2.5 h-2.5 rounded-full bg-cyan-300 border border-white shadow-glow-cyan" />
+              </span>
+            </Marker>
           )}
 
           {/* Vessel markers */}
@@ -369,6 +438,15 @@ export default function LiveVesselMap({ className = "", selectedMmsi, onSelectVe
             DARK
           </p>
         </div>
+
+        {/* Tactical feedback banner */}
+        {notice && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92%] px-3.5 py-2 rounded-md border border-cyan-400/30 bg-navy-950/90 backdrop-blur-md shadow-glow-cyan">
+            <p className="text-[9px] font-mono tracking-[0.18em] text-cyan-300 whitespace-nowrap overflow-hidden text-ellipsis">
+              {notice}
+            </p>
+          </div>
+        )}
 
         {/* Reset-view control */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">

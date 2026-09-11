@@ -126,14 +126,94 @@ export default function SettingsPage() {
 
   const handleReset = useCallback(async () => {
     if (!confirm("Reset simulation seed and clear cached telemetry history?")) return;
+    setStatus("saving");
     try {
-      await fetch("/api/v1/settings/reset", {
+      const res = await fetch("/api/v1/settings/reset", {
         method: "POST",
         headers: { "X-ZeroTrust-Token": TOKEN },
       });
-      window.location.reload();
-    } catch {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setStatus("saved");
+      setTimeout(() => window.location.reload(), 600);
+    } catch (e) {
       setStatus("error");
+      setError(`Reset failed: ${e.message}`);
+    }
+  }, []);
+
+  /** Real data export — pulls the live fleet snapshot and downloads a file. */
+  const handleExport = useCallback(async (format) => {
+    setStatus("saving");
+    try {
+      const res = await fetch("/api/v1/vessels?page_size=1000");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const vessels = Array.isArray(data) ? data : data?.vessels ?? [];
+
+      let blob;
+      let filename;
+      if (format === "geojson") {
+        filename = `aegis-fleet-${Date.now()}.geojson`;
+        blob = new Blob(
+          [
+            JSON.stringify(
+              {
+                type: "FeatureCollection",
+                features: vessels.map((v) => ({
+                  type: "Feature",
+                  properties: {
+                    mmsi: v.mmsi,
+                    name: v.ship_name,
+                    type: v.vessel_type,
+                    sog: v.speed_knots,
+                    cog: v.course_over_ground,
+                    dark: v.is_dark_vessel,
+                    flag: v.flag_country,
+                    nav_status: v.nav_status,
+                  },
+                  geometry: { type: "Point", coordinates: [v.longitude, v.latitude] },
+                })),
+              },
+              null,
+              2
+            ),
+          ],
+          { type: "application/geo+json" }
+        );
+      } else {
+        filename = `aegis-fleet-${Date.now()}.csv`;
+        const header = ["mmsi", "name", "type", "sog", "cog", "lat", "lon", "dark", "flag", "dest", "ts_epoch"];
+        const rows = vessels.map((v) =>
+          [
+            v.mmsi,
+            `"${(v.ship_name ?? "").replace(/"/g, '""')}"`,
+            v.vessel_type,
+            v.speed_knots,
+            v.course_over_ground,
+            v.latitude,
+            v.longitude,
+            v.is_dark_vessel,
+            `"${(v.flag_country ?? "").replace(/"/g, '""')}"`,
+            `"${(v.destination ?? "").replace(/"/g, '""')}"`,
+            v.timestamp_epoch,
+          ].join(",")
+        );
+        blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv" });
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2500);
+    } catch (e) {
+      setStatus("error");
+      setError(`Export failed: ${e.message}`);
     }
   }, []);
 
@@ -284,8 +364,8 @@ export default function SettingsPage() {
             <div className="grid grid-cols-3 gap-1.5">
               {[
                 { id: "tactical_dark", label: "TACTICAL" },
-                { id: "bathymetry", label: "BATHY" },
-                { id: "high_contrast", label: "RADAR" },
+                { id: "bathymetry_deep", label: "BATHY" },
+                { id: "high_contrast_radar", label: "RADAR" },
               ].map((s) => (
                 <button
                   key={s.id}
@@ -355,13 +435,13 @@ export default function SettingsPage() {
           </p>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => updateSettings({ export_format: "json" })}
+              onClick={() => handleExport("geojson")}
               className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-radar-400/25 bg-radar-400/10 text-radar-300 text-[10px] font-mono hover:bg-radar-400/20 transition-colors"
             >
               <Globe className="w-3.5 h-3.5" /> EXPORT GEOJSON
             </button>
             <button
-              onClick={() => updateSettings({ export_format: "csv" })}
+              onClick={() => handleExport("csv")}
               className="flex items-center gap-1.5 px-3 py-2 rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono hover:bg-emerald-500/20 transition-colors"
             >
               <Satellite className="w-3.5 h-3.5" /> EXPORT CSV
